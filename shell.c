@@ -17,7 +17,7 @@ void Q_shell_op(char** logs, int s, char* comd);
 int main(int argc, char* argv[])
 {
     system("clear");
-    printf("\n       --<><><><><><><><><><><><><( Q-SHELL )><><><><><><><><><><><><>--\n");
+    printf("\n       --<><><><><><><><><><><><><( QM-SHELL )><><><><><><><><><><><><>--\n");
     char comd[50], **logs;
     int comd_no = 0;
 
@@ -106,6 +106,104 @@ void normal_comd(char comd[])
         execvp(args[0], argum);
         printf("Error: Unknown Command!!\n");
         exit(0);
+    }
+}//-------------------------------------------
+
+void pipe_comd(char comd[], int p_no)
+{
+    int j= 0, pipe_fd[p_no][2], k;
+    char *sub_comd[p_no + 1], *r;
+
+    for(j = 0; j < p_no + 1; j++)
+    {
+        if(j != p_no)
+            pipe(pipe_fd[j]); //open pipe
+        
+        strtok_r(comd, "|", &r);
+        if(*comd == ' ')
+            comd++;
+        sub_comd[j] = malloc(sizeof(char)*(strlen(comd)+1));
+        strcpy(sub_comd[j],comd);
+        sub_comd[j][strlen(comd)] = '\0';
+        if(j != p_no)
+            sub_comd[j][strlen(comd)-1] = '\0';
+
+      //  printf("\nsub%d: %s", j+1,sub_comd[j]);
+        strcpy(comd, r);
+    }
+
+    for(k = 0; k < p_no + 1; k++)
+    {
+        if(strocc(sub_comd[k], '<', NULL) > 0 || strocc(sub_comd[k], '>', NULL) > 0){
+            if(strocc(sub_comd[k], '<', NULL) > 0)
+                redirect_comd(sub_comd[k], NULL);
+            else
+                redirect_comd(sub_comd[k], &pipe_fd[k+1][1]);
+
+        }
+
+        else
+        {
+            int i = 1, arg = strocc(sub_comd[k], ' ', NULL);
+            char* rest = sub_comd[k], args[arg+1][15];
+            strtok_r(sub_comd[k], " ", &rest);
+            strncpy(args[0], sub_comd[k], 15);
+            args[0][14] = '\0';
+        
+            //printf("\nfor %d command: %s ", k+1, args[0]);
+            //arg > 0? printf("Arguments: %s  Total-Arguments: %d\n\n", rest, arg):printf("\n\n");
+
+            while(i < arg+1) //tokenize
+            {   
+                strcpy(sub_comd[k], rest);
+                strtok_r(sub_comd[k], " ", &rest);
+                strncpy(args[i], sub_comd[k], 15);
+                args[i][14] = '\0';
+                i++; 
+            }
+
+            if(fork()) //parrent process
+            {
+                if(k == p_no) //only wait for last sub command
+                    wait(NULL);
+            }
+
+            else {  //child process
+                if(k != 0)
+                {
+                //   printf("\n k:%d,child pipe%d[0](input)\n",k, k-1);
+                    if(dup2(pipe_fd[k-1][0], 0) < 0){
+                        perror("error in pipe input");
+                        exit(1);          
+                    }
+                }
+
+                if(k != p_no)
+                {
+                  //  printf("\n k:%d,child pipe%d[1](output)\n",k, k);
+                    if(dup2(pipe_fd[k][1], 1) < 0){
+                        perror("error in pipe output");
+                        exit(1);          
+                    }
+                }
+                int f;
+                for(f = 0; f < p_no; f++){
+                    close(pipe_fd[f][0]);
+                    close(pipe_fd[f][1]);
+                }
+    
+                char* argum[arg+2];
+                for(f = 0; f < arg + 1; f++)
+                {
+                    argum[f] = args[f];
+                }
+                argum[arg+1] = NULL;
+
+                execvp(args[0], argum);
+                printf("Error: Unknown Command!!\n");
+                exit(0);
+            }
+        }
     }
 }//-------------------------------------------
 
