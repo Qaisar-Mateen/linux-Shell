@@ -54,3 +54,57 @@ int main(int argc, char* argv[])
     system("clear");
     return 0;
 }
+
+void normal_comd(char comd[])
+{
+    int i = 1, flag = 0, arg = strocc(comd, ' ', &flag);
+    char* rest = comd, args[arg+1][15], *tok;
+    tok = strtok_r(comd, " ", &rest);
+    strncpy(args[0], tok, 15);
+    args[0][14] = '\0';
+            
+    printf("\ncommand: %s ",  args[0]);
+    arg > 0? printf("Arguments: %s  Total-Arguments: %d\n\n", rest, arg):printf("\n\n");
+            
+    while(i < arg+1)
+    {   
+        strcpy(comd, rest);
+        tok = strtok_r(comd, " ", &rest);
+
+        if(strcmp(tok, "&") == 0)
+        flag = 1; //concurrent execution flag
+
+        else
+        {
+            strncpy(args[i], tok, 15);
+            args[i][14] = '\0';
+            i++;
+        }
+    }
+
+    if(fork()) //parrent process
+    {
+        if(flag == 0)
+            wait(NULL);
+    }
+
+    else //child process
+    {
+        int j;
+        char* argum[arg+2];
+        for(j =0; j < arg + 1; j++)
+        {
+            argum[j] = args[j];
+        }
+        argum[arg+1] = NULL;
+                
+        if(flag == 1) {
+            printf("Please wait, executing '%s' command!!\n\n", args[0]);
+            sleep(2);
+        }
+
+        execvp(args[0], argum);
+        printf("Error: Unknown Command!!\n");
+        exit(0);
+    }
+}//-------------------------------------------
