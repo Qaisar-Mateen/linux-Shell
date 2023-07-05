@@ -8,8 +8,9 @@
 
 void normal_comd(char comd[]);
 void pipe_comd(char comd[], int p_no);
-void redirect_comd(char comd[], int* pipe_fd);
+void redirect_comd(char comd[]);
 int strocc(char str[], char ch, int* f);
+void p_r_comd(char comd[], int p_no);
 char** create_log(char** l, int s, char comd[]);
 void peek_log(char** l, int s);
 void Q_shell_op(char** logs, int s, char* comd);
@@ -17,7 +18,7 @@ void Q_shell_op(char** logs, int s, char* comd);
 int main(int argc, char* argv[])
 {
     system("clear");
-    printf("\n       --<><><><><><><><><><><><><( QM-SHELL )><><><><><><><><><><><><>--\n");
+    printf("\n       --<><><><><><><><><><><><><( Q-SHELL )><><><><><><><><><><><><>--\n");
     char comd[50], **logs;
     int comd_no = 0;
 
@@ -25,6 +26,8 @@ int main(int argc, char* argv[])
     {
         printf("\nEnter command: ");
         scanf("\n%[^\n]%*c", comd); 
+        fflush(stdin);
+        fflush(stdout);
 
         comd[strlen(comd)] = '\0';
         
@@ -42,7 +45,7 @@ int main(int argc, char* argv[])
                 pipe_comd(comd, p_no);
 
             else if(strocc(comd, '>', NULL) > 0 || strocc(comd, '<', NULL) > 0)
-                redirect_comd(comd, NULL);
+                redirect_comd(comd);
 
             else
                 normal_comd(comd); 
@@ -111,47 +114,42 @@ void normal_comd(char comd[])
 
 void pipe_comd(char comd[], int p_no)
 {
-    int j= 0, pipe_fd[p_no][2], k;
-    char *sub_comd[p_no + 1], *r;
 
-    for(j = 0; j < p_no + 1; j++)
+    if(strocc(comd, '<', NULL) > 0 || strocc(comd, '>', NULL) > 0) //if it also have redirection
     {
-        if(j != p_no)
-            pipe(pipe_fd[j]); //open pipe
-        
-        strtok_r(comd, "|", &r);
-        if(*comd == ' ')
-            comd++;
-        sub_comd[j] = malloc(sizeof(char)*(strlen(comd)+1));
-        strcpy(sub_comd[j],comd);
-        sub_comd[j][strlen(comd)] = '\0';
-        if(j != p_no)
-            sub_comd[j][strlen(comd)-1] = '\0';
-
-      //  printf("\nsub%d: %s", j+1,sub_comd[j]);
-        strcpy(comd, r);
+        p_r_comd(comd, p_no);
     }
 
-    for(k = 0; k < p_no + 1; k++)
+    else
     {
-        if(strocc(sub_comd[k], '<', NULL) > 0 || strocc(sub_comd[k], '>', NULL) > 0){
-            if(strocc(sub_comd[k], '<', NULL) > 0)
-                redirect_comd(sub_comd[k], NULL);
-            else
-                redirect_comd(sub_comd[k], &pipe_fd[k+1][1]);
+        int j= 0, pipe_fd[p_no][2], k;
+        char *sub_comd[p_no + 1], *r;
 
+        for(j = 0; j < p_no + 1; j++) //extracts subcommands
+        {
+            if(j != p_no)
+                pipe(pipe_fd[j]); //open pipe
+
+            strtok_r(comd, "|", &r);
+            if(*comd == ' ')
+                comd++;
+            sub_comd[j] = malloc(sizeof(char)*(strlen(comd)+1));
+            strcpy(sub_comd[j],comd);
+            sub_comd[j][strlen(comd)] = '\0';
+            if(j != p_no)
+                sub_comd[j][strlen(comd)-1] = '\0';
+
+            //  printf("\nsub%d: %s", j+1,sub_comd[j]);
+            strcpy(comd, r);
         }
 
-        else
+        for(k = 0; k < p_no + 1; k++)
         {
             int i = 1, arg = strocc(sub_comd[k], ' ', NULL);
             char* rest = sub_comd[k], args[arg+1][15];
             strtok_r(sub_comd[k], " ", &rest);
             strncpy(args[0], sub_comd[k], 15);
             args[0][14] = '\0';
-        
-            //printf("\nfor %d command: %s ", k+1, args[0]);
-            //arg > 0? printf("Arguments: %s  Total-Arguments: %d\n\n", rest, arg):printf("\n\n");
 
             while(i < arg+1) //tokenize
             {   
@@ -167,11 +165,9 @@ void pipe_comd(char comd[], int p_no)
                 if(k == p_no) //only wait for last sub command
                     wait(NULL);
             }
-
             else {  //child process
                 if(k != 0)
                 {
-                //   printf("\n k:%d,child pipe%d[0](input)\n",k, k-1);
                     if(dup2(pipe_fd[k-1][0], 0) < 0){
                         perror("error in pipe input");
                         exit(1);          
@@ -180,7 +176,6 @@ void pipe_comd(char comd[], int p_no)
 
                 if(k != p_no)
                 {
-                  //  printf("\n k:%d,child pipe%d[1](output)\n",k, k);
                     if(dup2(pipe_fd[k][1], 1) < 0){
                         perror("error in pipe output");
                         exit(1);          
@@ -204,20 +199,32 @@ void pipe_comd(char comd[], int p_no)
                 exit(0);
             }
         }
+
+        int f;
+        for(f = 0; f < p_no; f++){
+            close(pipe_fd[f][0]);
+            close(pipe_fd[f][1]);
+        }
+        sleep(0.95);
     }
 }//-------------------------------------------
 
-void redirect_comd(char comd[], int *pipe_fd)
+void redirect_comd(char comd[])
 {
     if(strocc(comd, '<', NULL) || strocc(comd, '>', NULL)) //checking if redirection exists
     {
-        int comd1_size = 0, i = 1, flag = 0, arg;
+        int comd1_size = 0, i = 1, flag = 0, arg, num = -1;
         for(comd1_size = 0; comd1_size < strlen(comd); comd1_size++) //calculating command size 
         {
             if(comd[comd1_size] == '<' || comd[comd1_size] == '>')
                 break;
         }
-        char comd_r[comd1_size], op = comd[comd1_size], *file = comd;
+        char op = comd[comd1_size];
+        if(comd[comd1_size-1] == '1' || comd[comd1_size-1] == '2' || comd[comd1_size-1] == '0'){
+            num = atoi(&comd[comd1_size-1]);
+            comd1_size--;
+        }
+        char comd_r[comd1_size], *file = comd;
         strncpy(comd_r, comd, comd1_size);
         comd_r[comd1_size-1] = '\0';
         strtok_r(comd, &op, &file);
@@ -232,19 +239,13 @@ void redirect_comd(char comd[], int *pipe_fd)
         arg > 0? printf("Arguments: %s  Total-Arguments: %d\n", rest, arg):printf("\n");
         printf("File: '%s' operator: '%c' cmd: '%s'\n\n", file, op, comd_r);
             
-        while(i < arg+1)
+        while(i < arg+1) //tokenize
         {   
             strcpy(comd_r, rest);
             strtok_r(comd_r, " ", &rest);
-            if(strcmp(comd_r, "&") == 0)
-            flag = 1; //concurrent execution flag
-
-            else
-            {
-                strncpy(args[i], comd_r, 15);
-                args[i][14] = '\0';
-                i++;
-            }   
+            strncpy(args[i], comd_r, 15);
+            args[i][14] = '\0';
+            i++;  
         }
     
         if(fork()) //parrent process
@@ -255,103 +256,25 @@ void redirect_comd(char comd[], int *pipe_fd)
             
             if(op == '>') {
                 fd = open(file, O_WRONLY | O_CREAT | O_TRUNC, 0666);
-                if(fd == -1){
-                    perror("Open Error Write");
-                    exit(1);
+
+                if(num == -1 || num == 1){
+                    if(fd == -1)
+                        perror("Open Error Write");
+                    dup2(fd, 1); //stdout
                 }
-                dup2(fd, 1); //stdout
-                if(pipe_fd)
-                    dup2(*pipe_fd, 0); //stdin
+
+                else if(num == 2){
+                    if(fd == -1)
+                        perror("Open Error Write");
+                    dup2(fd, num); //stderr
+                }
             }
     
             if(op == '<') {
                 fd = open(file, O_RDONLY);
-                if(fd == -1){
+                if(fd == -1)
                     perror("Open Error Read");
-                    exit(1);
-                }
                 dup2(fd, 0); //stdin
-                if(pipe_fd)
-                    dup2(*pipe_fd, 1); //stdout
-            }
-            char* argum[arg+2];
-            for(i = 0; i < arg + 1; i++)
-                argum[i] = args[i];
-            argum[arg+1] = NULL;
-
-            execvp(argum[0], argum);
-            printf("Error: Unknown Command!!\n");
-            exit(0);
-        }
-    }
-}//-------------------------------------------
-
-void redirect_comd(char comd[], int *pipe_fd)
-{
-    if(strocc(comd, '<', NULL) || strocc(comd, '>', NULL)) //checking if redirection exists
-    {
-        int comd1_size = 0, i = 1, flag = 0, arg;
-        for(comd1_size = 0; comd1_size < strlen(comd); comd1_size++) //calculating command size 
-        {
-            if(comd[comd1_size] == '<' || comd[comd1_size] == '>')
-                break;
-        }
-        char comd_r[comd1_size], op = comd[comd1_size], *file = comd;
-        strncpy(comd_r, comd, comd1_size);
-        comd_r[comd1_size-1] = '\0';
-        strtok_r(comd, &op, &file);
-        file++;
-
-        arg = strocc(comd_r, ' ', &flag);
-        char* rest = comd_r, args[arg+1][15];
-        strtok_r(comd_r, " ", &rest);
-        strncpy(args[0], comd_r, 15);
-        args[0][14] = '\0';    
-        printf("\ncommand: %s ",  args[0]);
-        arg > 0? printf("Arguments: %s  Total-Arguments: %d\n", rest, arg):printf("\n");
-        printf("File: '%s' operator: '%c' cmd: '%s'\n\n", file, op, comd_r);
-            
-        while(i < arg+1)
-        {   
-            strcpy(comd_r, rest);
-            strtok_r(comd_r, " ", &rest);
-            if(strcmp(comd_r, "&") == 0)
-            flag = 1; //concurrent execution flag
-
-            else
-            {
-                strncpy(args[i], comd_r, 15);
-                args[i][14] = '\0';
-                i++;
-            }   
-        }
-    
-        if(fork()) //parrent process
-            wait(NULL);
-
-        else {
-            int fd; 
-            
-            if(op == '>') {
-                fd = open(file, O_WRONLY | O_CREAT | O_TRUNC, 0666);
-                if(fd == -1){
-                    perror("Open Error Write");
-                    exit(1);
-                }
-                dup2(fd, 1); //stdout
-                if(pipe_fd)
-                    dup2(*pipe_fd, 0); //stdin
-            }
-    
-            if(op == '<') {
-                fd = open(file, O_RDONLY);
-                if(fd == -1){
-                    perror("Open Error Read");
-                    exit(1);
-                }
-                dup2(fd, 0); //stdin
-                if(pipe_fd)
-                    dup2(*pipe_fd, 1); //stdout
             }
             char* argum[arg+2];
             for(i = 0; i < arg + 1; i++)
@@ -376,6 +299,105 @@ int strocc(char str[], char ch, int* f) //find all the occurance of the characte
             *f = 1;
     }
     return occ;
+}//-------------------------------------------
+
+void p_r_comd(char comd[], int p_no)
+{
+    char cm[strlen(comd)+1];
+    strcpy(cm,comd);
+    cm[strlen(cm)] = '\0';
+
+    int j= 0, pipe_fd[p_no][2], k;
+    char *sub_comd[p_no + 1], *r;
+
+    for(j = 0; j < p_no + 1; j++) //extracts subcommands
+    {
+        if(j != p_no)
+            pipe(pipe_fd[j]); //open pipe
+
+        strtok_r(comd, "|", &r);
+        if(*comd == ' ')
+            comd++;
+        sub_comd[j] = malloc(sizeof(char)*(strlen(comd)+1));
+        strcpy(sub_comd[j],comd);
+        sub_comd[j][strlen(comd)] = '\0';
+        if(j != p_no)
+            sub_comd[j][strlen(comd)-1] = '\0';
+
+        //  printf("\nsub%d: %s", j+1,sub_comd[j]);
+        strcpy(comd, r);
+    }
+
+    for(j = 0; j < p_no; j++){
+        close(pipe_fd[j][0]);
+        close(pipe_fd[j][1]);
+    }
+
+    for(k  = 0; k <= p_no; k++)
+    {
+        if(strocc(sub_comd[k], '<', NULL) || strocc(sub_comd[k], '>', NULL))
+        {
+            if((k == 0 && strocc(sub_comd[k], '<', NULL)) || (k == p_no && strocc(sub_comd[k], '>', NULL)))
+            {
+                int cmd_s = 0, i = 1, flag = 0, arg, num = -1;
+                for(cmd_s = 0; cmd_s < strlen(sub_comd[k]); cmd_s++) //calculating command size 
+                {
+                    if(sub_comd[k][cmd_s] == '<' || sub_comd[k][cmd_s] == '>')
+                    break;
+                }
+                char op = sub_comd[k][cmd_s];
+                if(sub_comd[k][cmd_s-1] == '1' || sub_comd[k][cmd_s-1] == '2' || sub_comd[k][cmd_s-1] == '0'){
+                    num = atoi(&sub_comd[k][cmd_s-1]);
+                    cmd_s--;
+                }
+                char comd_r[cmd_s], *file = sub_comd[k];
+                strncpy(comd_r, sub_comd[k], cmd_s);
+                comd_r[cmd_s-1] = '\0';
+                strtok_r(sub_comd[k], &op, &file);
+                file++;
+
+                arg = strocc(comd_r, ' ', &flag);
+                char* rest = comd_r, args[arg+1][15];
+                strtok_r(comd_r, " ", &rest);
+                strncpy(args[0], comd_r, 15);
+                args[0][14] = '\0';    
+                printf("\ncommand: %s ",  args[0]);
+                arg > 0? printf("Arguments: %s  Total-Arguments: %d\n", rest, arg):printf("\n");
+                printf("File: '%s' operator: '%c' cmd: '%s'\n\n", file, op, comd_r);
+            
+                while(i < arg+1) //tokenize
+                {   
+                    strcpy(comd_r, rest);
+                    strtok_r(comd_r, " ", &rest);
+                    strncpy(args[i], comd_r, 15);
+                    args[i][14] = '\0';
+                    i++;  
+                }
+                if(fork()) //parrent process
+                    wait(0);
+
+                else {
+                    
+                    char* argum[arg+2];
+                    exit(0);
+                    for(i = 0; i < arg + 1; i++)
+                        argum[i] = args[i];
+                    system(cm);                        
+                    argum[arg+1] = NULL;
+
+                    execvp(argum[0], argum);
+                    printf("Error: Unknown Command!!\n");
+                    exit(0);
+                }
+            }
+
+            else
+            {
+                printf("Error: This combination of redirection is not possible with pipes!!\n");
+                exit(1);
+            }
+        }
+    }
 }//-------------------------------------------
 
 char** create_log(char **l, int s, char comd[]) //manages commands logs creation
@@ -416,4 +438,63 @@ char** create_log(char **l, int s, char comd[]) //manages commands logs creation
     free(l);
     
     return new;
+}//-------------------------------------------
+
+void peek_log(char** l, int s) //prints atmost 10 recent logs
+{
+    if(s==0) {
+        printf("\nError: No Commands in History \n"); 
+        return;}
+    
+    int i, end = 0;
+    printf("\n       ------------");
+    printf("\n      /Recent LOGS/\n");
+    printf("       ------------");
+
+    end = (s <= 10 && s >= 0)?  0 : s-10; //to print only recent 10
+
+        for(i = s-1; i >= end; i--)
+            printf("\n-%d\t%s", i+1, l[i]);
+
+    printf("\n");        
+}//-------------------------------------------
+
+void Q_shell_op(char** logs, int s, char* comd)
+{
+    if(logs && (strlen(comd) == 2 || strlen(comd) == 3))
+    {
+        if(!strcmp(comd, "!!")) //if command is !!
+        {
+            if(s == 0) {
+                printf("\nError: No Commands in History \n"); 
+                return;
+            }
+
+            comd[0] = '\0';
+            strcpy(comd, logs[s-1]);
+            comd[strlen(comd)] = '\0';
+        }
+        
+        if(comd[0] == '!')
+        {
+            char num[3] = {comd[1], comd[2], '\0'};
+            int ind = atoi(num);
+
+            if(ind > 0 && (ind <= s && ind > s-10))
+            {
+                comd[0] = '\0';
+                strcpy(comd, logs[ind-1]);
+                comd[strlen(comd)] = '\0';
+                if(strlen(comd) == 2 || strlen(comd) == 2)
+                    Q_shell_op(logs, s, comd);
+            }
+
+            else{
+                printf("\nCan't execute command(%d): %s", ind, comd);
+                printf("\nError: Invalid Command no. \n");
+                //strcpy(comd, "NULL");
+                return;
+            }
+        }
+    }
 }//-------------------------------------------
