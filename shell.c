@@ -364,3 +364,56 @@ void redirect_comd(char comd[], int *pipe_fd)
         }
     }
 }//-------------------------------------------
+
+int strocc(char str[], char ch, int* f) //find all the occurance of the character passed in string 
+{
+    int i, occ = 0;
+    for(i = 0; i< strlen(str); i++)
+    {
+        if(str[i] == ch && str[i+1] != '&')
+            occ++;
+        if(f && str[i+1] == '&')
+            *f = 1;
+    }
+    return occ;
+}//-------------------------------------------
+
+char** create_log(char **l, int s, char comd[]) //manages commands logs creation
+{
+    if(s == 0) //first command case
+    {
+        l = malloc(sizeof(char*));
+        l[s] = malloc(sizeof(char)*(strlen(comd)+1));
+        
+        if(l[s] == NULL){
+            perror("malloc failed");
+            exit(1);
+        }
+        strcpy(l[s], comd);
+        l[s][strlen(comd)] = '\0';
+
+        return l;
+    }
+
+    char** new = malloc(sizeof(char*)*(s+1));
+    int i = 0;
+    for(i = 0; i < s; i++){
+        new[i] = malloc(sizeof(char)*(strlen(l[i])+1));
+        if(new[i] == NULL){
+            perror("malloc failed");
+            exit(1);
+        }
+        strcpy(new[i], l[i]);
+        new[i][strlen(new[i])] = '\0';
+    }
+
+    new[s] = malloc(sizeof(char)*(strlen(comd)+1));
+    strcpy(new[s], comd);
+    new[s][strlen(comd)] = '\0';
+
+    for(i = 0; i < s; i++)  //de-allocating previous log.
+        free(l[i]);
+    free(l);
+    
+    return new;
+}//-------------------------------------------
